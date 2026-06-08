@@ -23,11 +23,13 @@ export function flattenContext(messages: Anthropic.MessageParam[]): string {
         .join('\n');
 }
 
-// The fold model compresses aged-out context into a short running summary. It replaces raw
-// history, so it must keep anything load-bearing — names, values, decisions, current intent.
+// The fold model compresses an aged-out slice of context into one compact, self-contained note.
+// The note REPLACES the raw slice in durable memory, so it must keep what's load-bearing while
+// throwing away mechanical noise — and stay short, since several notes form the running recap.
 export const FOLD_SYSTEM =
-    `You compress an agent's working context into a short running summary so it can keep going ` +
-    `without holding the full history. Be concise and factual: capture who the user is and what ` +
-    `they want, key facts established, decisions made, routines used, and the current state / next ` +
-    `intent. A few sentences. Keep names and concrete values verbatim. This summary replaces the raw ` +
-    `history — do not drop anything load-bearing.`;
+    `You write a compact note that consolidates a slice of an assistant's working session, so the ` +
+    `session can continue without holding the raw history. Capture only what is load-bearing: who ` +
+    `the user is, facts they shared, decisions and preferences, what was built or done, and where ` +
+    `things stand now. Keep names and concrete values verbatim. Ignore mechanical plumbing ` +
+    `(power-on lines, wait/perceive turns, tool acknowledgements). A few sentences, third person, ` +
+    `self-contained. This note replaces the raw slice — don't drop anything that matters.`;

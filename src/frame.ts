@@ -16,8 +16,9 @@ export type World = {
     onEvent: (ev: ChatEvent) => void; // left pane: conversation / agent activity
     maxSteps: number; // per-frame step budget (subroutine runaway guard)
     maxDepth: number; // invoke recursion guard
-    foldBudget: number; // ~tokens of C before older context is folded out
+    foldBudget: number; // real input tokens of C before older context is folded out
     foldKeepTail: number; // recent messages kept verbatim on fold
+    recapEpisodes: number; // how many recent episode notes to surface as "session so far"
     episodeN: number; // running counter for episode/* keys (mutable, shared)
 };
 
@@ -27,7 +28,6 @@ export type World = {
 // FRESH C (working memory). The JS call stack mirrors the frame stack.
 export class Frame {
     C: Anthropic.MessageParam[] = []; // this frame's own working memory (fresh per call)
-    private summary = ''; // running gist of context folded out of C (the consolidation tier)
     private lastInput = 0; // real input tokens of the last LLM call (from usage) — the fold trigger
     private done = false;
     private returnValue = '';
@@ -82,8 +82,11 @@ export class Frame {
             ? `${this.world.mem.size} entries (data and routines) — not shown here; use search("...") to find relevant ones, then recall/invoke by name`
             : 'empty';
         const pending = this.world.term.hasInput() ? 'YES — read it with perceive("terminal")' : 'none';
-        const sessionSoFar = this.summary
-            ? `\nSESSION SO FAR (older context was folded out; full detail is in M under episode/*):\n${this.summary}\n`
+        // Consolidation tier: the recent episode notes (compressed, living in M) ARE the running
+        // "session so far". Because they're in M they survive power-off; older ones stay searchable.
+        const recap = this.recentEpisodes();
+        const sessionSoFar = recap
+            ? `\nSESSION SO FAR (consolidated notes of earlier context; older detail is searchable in M):\n${recap}\n`
             : '';
         const system =
             `${this.world.system}\n${sessionSoFar}\n` +
@@ -140,8 +143,10 @@ export class Frame {
         return info;
     }
 
-    // Fold the oldest part of C into the running summary + an episode in M, when C is over budget.
-    // Returns what was folded (for the trace), or null. One LLM call per fold; cheap and rare.
+    // Fold the oldest part of C into a COMPRESSED episode note in M, when C is over budget.
+    // The note (not the raw transcript) is what's archived — so M never bloats and episodes can't
+    // nest. One LLM call per fold; the episode counter advances only on success. C shrinks only
+    // after the note is safely stored, so a transient summariser failure just retries next step.
     private async maybeFold(): Promise<{ key: string; msgs: number } | null> {
         // Trigger on the REAL input-token count of the previous step (from usage), not a guess.
         // 0 on the first step (no call yet) → never folds prematurely.
@@ -150,28 +155,43 @@ export class Frame {
         if (this.C.length <= keep + 1) return null;
 
         const head = this.C.slice(0, this.C.length - keep);
-        const tail = this.C.slice(this.C.length - keep);
-        const headText = flattenContext(head);
-        const key = `episode/${++this.world.episodeN}`;
-        this.world.mem.set(key, headText); // demote detail C → M (durable, searchable archive)
-
         try {
-            const prompt =
-                (this.summary ? `Current summary:\n${this.summary}\n\n` : '') +
-                `New context to fold in (full detail archived in M as "${key}"):\n${headText}\n\n` +
-                `Produce the updated running summary.`;
-            const resp = await llm([{ role: 'user', content: prompt }], FOLD_SYSTEM);
-            this.summary = resp.content
-                .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-                .map(b => b.text)
-                .join('\n')
-                .trim();
-            this.C = tail;
+            const note = await this.summarize(flattenContext(head));
+            if (!note) return null; // empty summary — don't burn an episode or drop context
+            const key = `episode/${this.world.episodeN + 1}`;
+            this.world.mem.set(key, note);
+            this.world.episodeN += 1;
+            this.C = this.C.slice(this.C.length - keep); // keep the recent tail verbatim
             return { key, msgs: head.length };
         } catch {
-            // fold failed — leave C intact this step (it'll retry next step); episode is still archived
-            return null;
+            return null; // transient summariser failure — C intact, retries next step
         }
+    }
+
+    // Compress a flattened slice of context into a compact, self-contained episode note.
+    private async summarize(headText: string): Promise<string> {
+        const resp = await llm(
+            [{ role: 'user', content: `Consolidate this slice of the session into a compact note:\n\n${headText}` }],
+            FOLD_SYSTEM,
+            { tools: false }, // pure-text summary — no tool surface
+        );
+        return resp.content
+            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+            .map(b => b.text)
+            .join('\n')
+            .trim();
+    }
+
+    // The most recent episode notes, in order — the persisted "session so far" preamble.
+    private recentEpisodes(): string {
+        const eps = this.world.mem
+            .keys()
+            .map(k => /^episode\/(\d+)$/.exec(k))
+            .filter((m): m is RegExpExecArray => m !== null)
+            .map(m => ({ key: m[0], n: parseInt(m[1], 10) }))
+            .sort((a, b) => a.n - b.n)
+            .slice(-this.world.recapEpisodes);
+        return eps.map(e => `${e.key}: ${this.world.mem.get(e.key)}`).join('\n');
     }
 
     private async exec(op: Operation): Promise<OpResult> {

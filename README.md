@@ -58,11 +58,13 @@ primitives (10, four concepts):
   is **queried with `search`**, not held resident. This scales to any library size (O(1) per
   step), keeps the context clean, and makes invoking a routine deliberate instead of reflexive.
   (The search backend is lexical today; it swaps to embeddings/hybrid behind `Memory.search`.)
-- **Context paging (consolidation).** When C grows past a budget, the harness folds its oldest part
-  into a short *running summary* and archives the detail as an `episode/N` entry in M (searchable).
-  Automatic — the agent doesn't manage it, like an OS paging memory — so long sessions stay coherent
-  without losing anything. This is a third memory tier emerging between live C and deliberate M:
-  involuntary, compressed, retrievable — episodic memory, distinct from what you chose to `remember`.
+- **Context paging (consolidation).** When C's real token count passes a budget, the harness folds
+  its oldest part into one **compact episode note** (`episode/N` in M) and keeps the recent tail. The
+  last few notes are surfaced as the *session-so-far* recap; older ones stay searchable. Automatic —
+  the agent doesn't manage it, like an OS paging memory (the harness both detects the pressure and
+  services the fold; the agent is the oblivious "userspace" program). This is the third memory tier
+  between live C and deliberate M: involuntary, compressed, persisted — episodic memory, distinct from
+  what the agent chose to `remember`. (Notes are compressed, so M never bloats and episodes can't nest.)
 
 ## Interface
 
@@ -133,8 +135,9 @@ Anything else is user input fed to the machine on the terminal channel.
 | `MAX_BURST` | `16` | max main-frame steps without yielding to the user (cost guard) |
 | `MAX_STEPS` | `12` | per-subroutine step budget (runaway guard) |
 | `MAX_DEPTH` | `5` | invoke recursion-depth guard |
-| `FOLD_BUDGET` | `6000` | ~tokens of C before its oldest part folds into the summary + an episode |
+| `FOLD_BUDGET` | `6000` | real input tokens before C's oldest part folds into an episode note |
 | `FOLD_KEEP` | `8` | recent messages kept verbatim when folding |
+| `RECAP_EPISODES` | `4` | recent episode notes surfaced as the session-so-far recap |
 | `MEM_FILE` | `m.json` | durable disk image for M |
 
 ## Files

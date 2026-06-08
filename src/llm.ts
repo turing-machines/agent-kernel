@@ -12,13 +12,19 @@ export type LLMResponse = {
     usage: { input: number; output: number };
 };
 
-export async function llm(C: Anthropic.MessageParam[], system: string): Promise<LLMResponse> {
+// tools are attached by default (a normal step); the harness omits them for pure-text utility
+// calls like the fold summariser, where a tool_use response would be wrong.
+export async function llm(
+    C: Anthropic.MessageParam[],
+    system: string,
+    opts?: { tools?: boolean },
+): Promise<LLMResponse> {
     const resp = await client.messages.create({
         model: config.model,
         max_tokens: config.maxTokens,
         system,
         messages: C,
-        tools: TOOLS,
+        ...(opts?.tools === false ? {} : { tools: TOOLS }),
     });
     return {
         content: resp.content,

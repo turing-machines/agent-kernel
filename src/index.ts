@@ -58,6 +58,7 @@ const world: World = {
     maxDepth: config.maxDepth,
     foldBudget: config.foldBudget,
     foldKeepTail: config.foldKeepTail,
+    recapEpisodes: config.recapEpisodes,
     episodeN: lastEpisode,
 };
 
