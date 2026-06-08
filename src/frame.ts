@@ -82,18 +82,17 @@ export class Frame {
             ? `${this.world.mem.size} entries (data and routines) — not shown here; use search("...") to find relevant ones, then recall/invoke by name`
             : 'empty';
         const pending = this.world.term.hasInput() ? 'YES — read it with perceive("terminal")' : 'none';
-        // Consolidation tier: the recent episode notes (compressed, living in M) ARE the running
-        // "session so far". Because they're in M they survive power-off; older ones stay searchable.
-        const recap = this.recentEpisodes();
-        const sessionSoFar = recap
-            ? `\nSESSION SO FAR (consolidated notes of earlier context; older detail is searchable in M):\n${recap}\n`
-            : '';
         const system =
-            `${this.world.system}\n${sessionSoFar}\n` +
+            `${this.world.system}\n\n` +
             `DURABLE MEMORY M: ${memHint}\n` +
             `TERMINAL pending input: ${pending}`;
 
-        const resp = await llm(this.C, system); // SEE
+        // Consolidation tier: the recent episode notes (compressed, persisted in M) ride in the
+        // MESSAGE stream as a leading turn — not baked into the system prompt. They are recalled
+        // history, not instructions, and keeping them out of system leaves tools+system a stable
+        // (cacheable) prefix that a fold doesn't churn. Older episodes stay searchable in M.
+        const recap = this.recentEpisodes();
+        const resp = await llm(this.messagesForStep(recap), system); // SEE
         const llmMs = Date.now() - t0;
 
         // PARSE
@@ -141,7 +140,7 @@ export class Frame {
             // the consolidation recap, and the live working context. Only `work` is foldable.
             breakdown: {
                 tools: Math.round(JSON.stringify(TOOLS).length / 4),
-                system: Math.round(this.world.system.length / 4),
+                system: Math.round(system.length / 4),
                 recap: Math.round(recap.length / 4),
                 work: this.cTokens(),
             },
@@ -208,6 +207,38 @@ export class Frame {
             .sort((a, b) => a.n - b.n)
             .slice(-this.world.recapEpisodes);
         return eps.map(e => `${e.key}: ${cap(this.world.mem.get(e.key) ?? '')}`).join('\n');
+    }
+
+    // Assemble the messages for one step (a transient view of C — never mutates C).
+    private messagesForStep(recap: string): Anthropic.MessageParam[] {
+        let msgs: Anthropic.MessageParam[] = this.C;
+
+        // Front: the recap rides as a leading USER turn — it's recalled history, not system
+        // instructions. Merged into C's first turn when that's already user, else prepended.
+        if (recap) {
+            const note = `[Recalled from earlier — consolidated notes of older context; full detail is searchable in M]\n${recap}`;
+            const first = msgs[0];
+            msgs =
+                first && first.role === 'user'
+                    ? [
+                          {
+                              role: 'user',
+                              content:
+                                  typeof first.content === 'string'
+                                      ? `${note}\n\n${first.content}`
+                                      : [{ type: 'text', text: note }, ...first.content],
+                          },
+                          ...msgs.slice(1),
+                      ]
+                    : [{ role: 'user', content: note }, ...msgs];
+        }
+
+        // Back: the model can't continue from a trailing assistant turn. If the last reply was
+        // plain text (no tool call → no tool_result), add a minimal user nudge so the call is valid.
+        const last = msgs[msgs.length - 1];
+        if (last && last.role === 'assistant') msgs = [...msgs, { role: 'user', content: '(continue)' }];
+
+        return msgs;
     }
 
     private async exec(op: Operation): Promise<OpResult> {

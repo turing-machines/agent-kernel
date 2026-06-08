@@ -58,13 +58,15 @@ primitives (10, four concepts):
   is **queried with `search`**, not held resident. This scales to any library size (O(1) per
   step), keeps the context clean, and makes invoking a routine deliberate instead of reflexive.
   (The search backend is lexical today; it swaps to embeddings/hybrid behind `Memory.search`.)
-- **Context paging (consolidation).** When C's real token count passes a budget, the harness folds
-  its oldest part into one **compact episode note** (`episode/N` in M) and keeps the recent tail. The
-  last few notes are surfaced as the *session-so-far* recap; older ones stay searchable. Automatic —
-  the agent doesn't manage it, like an OS paging memory (the harness both detects the pressure and
-  services the fold; the agent is the oblivious "userspace" program). This is the third memory tier
-  between live C and deliberate M: involuntary, compressed, persisted — episodic memory, distinct from
-  what the agent chose to `remember`. (Notes are compressed, so M never bloats and episodes can't nest.)
+- **Context paging (consolidation).** When C alone (the uncompressed working set) passes a budget,
+  the harness folds its oldest part into one **compact episode note** (`episode/N` in M) and keeps the
+  recent tail. The last few notes ride back in as a *recap* — a leading **message** before C (recalled
+  history, not a system instruction), so `tools`+`system` stay a stable prefix that a fold doesn't
+  churn. Older notes stay searchable. Automatic — the agent doesn't manage it, like an OS paging memory
+  (the harness both detects the pressure and services the fold; the agent is the oblivious "userspace"
+  program). This is the third memory tier between live C and deliberate M: involuntary, compressed,
+  persisted — episodic memory, distinct from what the agent chose to `remember`. (Notes are compressed,
+  so M never bloats and episodes can't nest.)
 
 ## Interface
 
