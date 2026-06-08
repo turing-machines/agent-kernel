@@ -89,17 +89,51 @@ export function traceStep(info: StepInfo, globalN: number): string {
 
 // ---- right pane (bottom): live state — updated in place, not appended ----------------------
 
-export function stateLine(mem: Memory, mainMsgs: number, mainTok: number, foldBudget: number, step: number): string {
-    const keys = mem.keys();
-    const keyStr = keys.length ? keys.map(k => s('yellow-fg', k)).join(dim('  ')) : dim('(empty)');
-    // current input tokens / fold budget — colour warms as it nears the fold, so you see it coming
-    const pct = foldBudget > 0 ? mainTok / foldBudget : 0;
-    const tokColor = pct >= 0.85 ? 'magenta-fg' : pct >= 0.6 ? 'yellow-fg' : 'green-fg';
-    const tok = `${s(tokColor, fmtTok(mainTok))}${dim('/' + fmtTok(foldBudget) + ' tok')}`;
-    const foldHint = pct >= 0.85 ? `  ${s('magenta-fg', '↯ fold soon')}` : '';
+export type StateView = {
+    mem: Memory;
+    msgs: number;
+    cTok: number; // ~tokens of C alone (the fold metric)
+    foldBudget: number;
+    inputTok: number; // real total input sent (system + tools + recap + C)
+    step: number;
+    breakdown: { tools: number; system: number; recap: number; work: number };
+};
+
+// a proportional bar: filled cells ∝ frac of the whole
+const bar = (frac: number, width = 12): string => {
+    const f = Math.max(0, Math.min(width, Math.round(width * frac)));
+    return '█'.repeat(f) + '░'.repeat(width - f);
+};
+
+export function stateLine(v: StateView): string {
+    const { mem, msgs, cTok, foldBudget, inputTok, step, breakdown: bd } = v;
+
+    // M cells with their individual sizes (what's in memory and how much each takes)
+    const cells = mem.entries();
+    const cellStr = cells.length
+        ? cells.map(([k, val]) => `${s('yellow-fg', k)}${dim('·' + fmtTok(Math.round(val.length / 4)))}`).join('  ')
+        : dim('(empty)');
+
+    // C alone vs the fold budget (C is what folding shrinks); `in` is the real total sent.
+    const pct = foldBudget > 0 ? cTok / foldBudget : 0;
+    const cColor = pct >= 0.85 ? 'magenta-fg' : pct >= 0.6 ? 'yellow-fg' : 'green-fg';
+    const cBar = `${s(cColor, '~' + fmtTok(cTok))}${dim('/' + fmtTok(foldBudget) + ' tok')}`;
+    const foldHint = pct >= 0.85 ? ` ${s('magenta-fg', '↯ fold soon')}` : '';
+
+    // where the input tokens actually go — proportional bars (only `work` is foldable)
+    const sum = bd.tools + bd.system + bd.recap + bd.work || 1;
+    const rows: [string, number, string][] = [
+        ['tools ', bd.tools, 'magenta-fg'],
+        ['system', bd.system, 'blue-fg'],
+        ['recap ', bd.recap, 'yellow-fg'],
+        ['C·work', bd.work, 'cyan-fg'],
+    ];
+    const bars = rows.map(([label, val, color]) => ` ${dim(label)} ${s(color, bar(val / sum))} ${dim(fmtTok(val))}`);
+
     return [
-        ` ${b('yellow-fg', `M·${keys.length}`)}  ${keyStr}`,
-        ` ${b('cyan-fg', 'C·main')} ${mainMsgs} msgs · ${tok}${foldHint}    ${dim('│')}    ${b('blue-fg', 'steps')} ${step}`,
+        ` ${b('yellow-fg', `M·${cells.length}`)}  ${cellStr}`,
+        ` ${b('cyan-fg', 'C·main')} ${msgs} msgs · ${cBar}${foldHint}  ${dim('· in ' + fmtTok(inputTok) + ' · steps ' + step)}`,
+        ...bars,
     ].join('\n');
 }
 

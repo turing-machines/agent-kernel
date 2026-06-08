@@ -88,7 +88,9 @@ so the frame never drifts when emoji/wide text appears. Needs a real terminal (T
 
 - **Left** — conversation + the agent call tree (sub-routines nested by depth).
 - **Right, top** — the action stream: each step's operations, color-coded, nested by frame.
-- **Right, bottom — state** — live: current M keys + main context size + step count (in place).
+- **Right, bottom — state** — live, in place: M cells with their sizes; C vs the fold budget (`~C/budget`,
+  the foldable working set) and the real total sent (`in`); and a bar breakdown of where the input tokens
+  go — `tools · system · recap · C·work` (only `C·work` is what folding shrinks).
 - **Input** — user input + status.
 
 Keys: type to talk · `Tab` cycles focus (input → left → right) · with a pane focused, `↑↓` /

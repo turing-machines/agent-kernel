@@ -36,6 +36,8 @@ const term = new Terminal();
 let globalStep = 0;
 let mainMsgs = 0;
 let mainTok = 0;
+let mainInput = 0;
+let mainBreakdown = { tools: 0, system: 0, recap: 0, work: 0 };
 
 // Continue episode numbering past any episodes already in M (so restarts don't overwrite).
 const lastEpisode = mem.keys().reduce((max, k) => {
@@ -50,8 +52,8 @@ const world: World = {
     term,
     onStep: info => {
         store.trace(traceStep(info, ++globalStep));
-        if (info.depth === 0) { mainMsgs = info.ctxMsgs; mainTok = info.ctxTok; }
-        store.state(stateLine(mem, mainMsgs, mainTok, config.foldBudget, globalStep));
+        if (info.depth === 0) { mainMsgs = info.ctxMsgs; mainTok = info.ctxTok; mainInput = info.usage.input; mainBreakdown = info.breakdown; }
+        store.state(stateLine({ mem, msgs: mainMsgs, cTok: mainTok, foldBudget: config.foldBudget, inputTok: mainInput, step: globalStep, breakdown: mainBreakdown }));
     },
     onEvent: ev => store.chat(chatLine(ev)),
     maxSteps: config.maxSteps,
@@ -82,7 +84,7 @@ const ink = render(createElement(App, { store }));
 ink.waitUntilExit().then(() => { leaveAlt(); process.exit(0); });
 
 store.chat(`\x1b[90magent-kernel booted · ${mem.size} durable cell(s) · type below · /mem /c /wipe /quit\x1b[0m`);
-store.state(stateLine(mem, 0, 0, config.foldBudget, 0));
+store.state(stateLine({ mem, msgs: 0, cTok: 0, foldBudget: config.foldBudget, inputTok: 0, step: 0, breakdown: mainBreakdown }));
 main.powerOn();
 
 (async () => {

@@ -34,6 +34,7 @@ export type StepInfo = {
     ms: number;
     yieldKind: YieldKind;
     ctxMsgs: number; // this frame's C length
-    ctxTok: number; // this frame's C estimated tokens
+    ctxTok: number; // this frame's C estimated tokens (the uncompressed working set)
     fold?: { key: string; msgs: number }; // set on the step where old context was folded out
+    breakdown: { tools: number; system: number; recap: number; work: number }; // ~token split of the input
 };

@@ -81,7 +81,7 @@ export function App({ store }: { store: UiStore }) {
     const [rightOff, setRightOff] = useState(0);
 
     const inputH = 3;
-    const stateH = 5;
+    const stateH = 9; // label + 6 state lines (M cells, C, and 4 breakdown bars) + border
     const leftW = Math.floor(cols / 2);
     const rightW = cols - leftW;
     // Reserve one line so a full-height frame never scrolls the terminal (off-by-one guard).
@@ -118,7 +118,9 @@ export function App({ store }: { store: UiStore }) {
                         lines={store.traceLines} focused={focus === 'right'} offset={rightOff} />
                     <Box flexDirection="column" width={rightW} height={stateH} borderStyle="round" borderColor="yellow" paddingX={1}>
                         <Text bold color="yellow">state</Text>
-                        <Text>{store.stateText}</Text>
+                        {store.stateText.split('\n').map((l, i) => (
+                            <Text key={i} wrap="truncate-end">{l}</Text>
+                        ))}
                     </Box>
                 </Box>
             </Box>

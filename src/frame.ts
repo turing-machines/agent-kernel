@@ -3,6 +3,7 @@ import { llm } from './llm.js';
 import { Memory } from './memory.js';
 import { Terminal } from './terminal.js';
 import { runCode, isCode, codeBody } from './exec.js';
+import { TOOLS } from './tools.js';
 import { flattenContext, FOLD_SYSTEM } from './fold.js';
 import type { Operation, OpResult, StepInfo, YieldKind, ChatEvent } from './types.js';
 
@@ -28,7 +29,6 @@ export type World = {
 // FRESH C (working memory). The JS call stack mirrors the frame stack.
 export class Frame {
     C: Anthropic.MessageParam[] = []; // this frame's own working memory (fresh per call)
-    private lastInput = 0; // real input tokens of the last LLM call (from usage) — the fold trigger
     private done = false;
     private returnValue = '';
     private stepInFrame = 0;
@@ -95,7 +95,6 @@ export class Frame {
 
         const resp = await llm(this.C, system); // SEE
         const llmMs = Date.now() - t0;
-        this.lastInput = resp.usage.input; // exact Claude token count of (system + C) for this call
 
         // PARSE
         const monologue = resp.content
@@ -136,8 +135,16 @@ export class Frame {
             ms: llmMs,
             yieldKind,
             ctxMsgs: this.C.length,
-            ctxTok: resp.usage.input, // real input tokens (system + C), not a chars/4 guess
+            ctxTok: this.cTokens(), // size of C ALONE (the uncompressed working set) — the fold metric
             fold: fold ?? undefined,
+            // ~token split of what's actually sent: the tool catalog, the resident instructions,
+            // the consolidation recap, and the live working context. Only `work` is foldable.
+            breakdown: {
+                tools: Math.round(JSON.stringify(TOOLS).length / 4),
+                system: Math.round(this.world.system.length / 4),
+                recap: Math.round(recap.length / 4),
+                work: this.cTokens(),
+            },
         };
         this.world.onStep(info);
         return info;
@@ -148,9 +155,11 @@ export class Frame {
     // nest. One LLM call per fold; the episode counter advances only on success. C shrinks only
     // after the note is safely stored, so a transient summariser failure just retries next step.
     private async maybeFold(): Promise<{ key: string; msgs: number } | null> {
-        // Trigger on the REAL input-token count of the previous step (from usage), not a guess.
-        // 0 on the first step (no call yet) → never folds prematurely.
-        if (this.lastInput < this.world.foldBudget) return null;
+        // Trigger on the size of C ALONE — the uncompressed working set. NOT the whole prompt:
+        // the system text and the recap (already-consolidated episode notes) don't shrink when we
+        // fold C, so counting them would fire fold pointlessly — and immediately at boot, the
+        // moment the recap loads. We measure only what folding actually reduces.
+        if (this.cTokens() < this.world.foldBudget) return null;
         const keep = this.world.foldKeepTail;
         if (this.C.length <= keep + 1) return null;
 
@@ -182,8 +191,15 @@ export class Frame {
             .trim();
     }
 
-    // The most recent episode notes, in order — the persisted "session so far" preamble.
+    // ~tokens of C alone (chars/4). The fold metric: the uncompressed working set, NOT the prompt.
+    private cTokens(): number {
+        return Math.round(JSON.stringify(this.C).length / 4);
+    }
+
+    // The most recent episode notes, in order — the persisted "session so far" preamble. Each note
+    // is capped so one oversized note (e.g. a raw episode from an older build) can't bloat the recap.
     private recentEpisodes(): string {
+        const cap = (s: string) => (s.length > 600 ? s.slice(0, 599) + '…' : s);
         const eps = this.world.mem
             .keys()
             .map(k => /^episode\/(\d+)$/.exec(k))
@@ -191,7 +207,7 @@ export class Frame {
             .map(m => ({ key: m[0], n: parseInt(m[1], 10) }))
             .sort((a, b) => a.n - b.n)
             .slice(-this.world.recapEpisodes);
-        return eps.map(e => `${e.key}: ${this.world.mem.get(e.key)}`).join('\n');
+        return eps.map(e => `${e.key}: ${cap(this.world.mem.get(e.key) ?? '')}`).join('\n');
     }
 
     private async exec(op: Operation): Promise<OpResult> {
