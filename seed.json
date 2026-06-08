@@ -1,0 +1,6 @@
+{
+  "upper": "exec:(args) => args.toUpperCase()",
+  "greet": "INPUT is a person's name. Invoke the routine named 'upper' with args being exactly: hello <name>  (substitute the actual name). Return exactly the value that upper returns, nothing added.",
+  "signoff": "INPUT is a person's name. Invoke the routine named 'upper' with args being exactly: see you soon <name>  (substitute the actual name). Return exactly the value that upper returns, nothing added.",
+  "card": "INPUT is a person's name. Step 1: invoke 'greet' with the name; keep its returned value as G. Step 2: invoke 'signoff' with the name; keep its returned value as S. Step 3: act to the terminal channel a single line exactly: G --- S  (with the real G and S substituted). Step 4: return the string 'carded'."
+}
