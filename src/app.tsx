@@ -1,5 +1,6 @@
 import React, { useEffect, useReducer, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import wrapAnsi from 'wrap-ansi';
 import type { UiStore } from './ui-store.js';
 
 // Track terminal size. Ink lays out with Yoga; we only need row/col counts to size the panes.
@@ -22,10 +23,10 @@ function useStore(store: UiStore) {
 
 type Focus = 'input' | 'left' | 'right';
 
-// A bordered, wrapping, auto-following pane of FIXED height. The inner content box is also a
-// fixed height with overflow hidden, so it never grows with text (no overflow); the latest lines
-// are bottom-pinned and older ones clip. `offset` scrolls back. Yoga + string-width fix the
-// border to the real size, so it never drifts.
+// A bordered, fixed-height pane. Each entry is pre-wrapped (ANSI- and width-aware) into single
+// visual rows, then the pane shows exactly `contentH` of those rows — so one <Text> is always
+// exactly one row. That makes windowing exact and the layout durable: no overflow, no overlap,
+// however long an entry is. `offset` scrolls back by rows; the latest is bottom-pinned.
 function Pane(props: {
     title: string;
     color: string;
@@ -36,12 +37,23 @@ function Pane(props: {
     offset: number;
 }) {
     const { title, color, width, boxH, lines, focused, offset } = props;
-    const contentH = Math.max(1, boxH - 3); // minus border (2) + title (1)
-    const total = lines.length;
-    const off = Math.min(offset, Math.max(0, total - 1));
+    const contentH = Math.max(1, boxH - 3); // rows available for content (minus border + title)
+    const paneW = Math.max(10, width - 4); // content width (minus border + paddingX)
+
+    // Wrap a generous tail of entries into single rows (more than enough to fill + scroll).
+    const rows: string[] = [];
+    for (const entry of lines.slice(-(contentH + offset + 50))) {
+        for (const para of entry.split('\n')) {
+            const wrapped = para.length ? wrapAnsi(para, paneW, { hard: true, trim: false }) : '';
+            for (const r of wrapped.split('\n')) rows.push(r);
+        }
+    }
+    const total = rows.length;
+    const off = Math.min(offset, Math.max(0, total - contentH));
     const end = total - off;
-    const start = Math.max(0, end - contentH - 6);
-    const visible = lines.slice(start, end);
+    const start = Math.max(0, end - contentH);
+    const visible = rows.slice(start, end);
+
     return (
         <Box flexDirection="column" width={width} height={boxH} borderStyle="round" borderColor={focused ? color : 'gray'} paddingX={1}>
             <Box width="100%">
@@ -51,8 +63,8 @@ function Pane(props: {
                 </Text>
             </Box>
             <Box flexDirection="column" width="100%" height={contentH} overflow="hidden" justifyContent="flex-end">
-                {visible.map((l, i) => (
-                    <Text key={start + i}>{l}</Text>
+                {visible.map((r, i) => (
+                    <Text key={start + i} wrap="truncate-end">{r.length ? r : ' '}</Text>
                 ))}
             </Box>
         </Box>

@@ -1,4 +1,4 @@
-// E — the terminal channel's INPUT side: a buffer the operator pushes into and the machine
+// E — the terminal channel's INPUT side: a buffer the user pushes into and the machine
 // drains via perceive; wait blocks on waitForInput until a line arrives. Output (the machine
 // acting on the terminal) is emitted as a 'say' ChatEvent and rendered by the UI — so this
 // stays a pure, UI-agnostic input device.
@@ -6,7 +6,7 @@ export class Terminal {
     private buffer: string[] = [];
     private waiter: (() => void) | null = null;
 
-    // operator text enters here — the one and only input path
+    // user text enters here — the one and only input path
     push(line: string) {
         this.buffer.push(line);
         const w = this.waiter;

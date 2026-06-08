@@ -33,8 +33,8 @@ primitives (10, four concepts):
 | `search(query)` | M→C : find data/routines relevant to a query |
 | `forget(addr)` | remove an entry from M — the only deleting op (how you change your mind) |
 | `perceive(channel)` | E→C : read input that arrived on a channel |
-| `act(channel,value)` | C→E : emit (e.g. speak to the operator) |
-| `wait()` | halt until the operator sends input |
+| `act(channel,value)` | C→E : emit (e.g. speak to the user) |
+| `wait()` | halt until the user sends input |
 | `invoke(name,args)` | run a routine from M as a subroutine; returns a value |
 | `return(value)` | finish a subroutine, hand a value to its caller |
 | `exec(code,args)` | run deterministic JS on the coprocessor — exact, no LLM |
@@ -58,6 +58,11 @@ primitives (10, four concepts):
   is **queried with `search`**, not held resident. This scales to any library size (O(1) per
   step), keeps the context clean, and makes invoking a routine deliberate instead of reflexive.
   (The search backend is lexical today; it swaps to embeddings/hybrid behind `Memory.search`.)
+- **Context paging (consolidation).** When C grows past a budget, the harness folds its oldest part
+  into a short *running summary* and archives the detail as an `episode/N` entry in M (searchable).
+  Automatic — the agent doesn't manage it, like an OS paging memory — so long sessions stay coherent
+  without losing anything. This is a third memory tier emerging between live C and deliberate M:
+  involuntary, compressed, retrievable — episodic memory, distinct from what you chose to `remember`.
 
 ## Interface
 
@@ -82,7 +87,7 @@ so the frame never drifts when emoji/wide text appears. Needs a real terminal (T
 - **Left** — conversation + the agent call tree (sub-routines nested by depth).
 - **Right, top** — the action stream: each step's operations, color-coded, nested by frame.
 - **Right, bottom — state** — live: current M keys + main context size + step count (in place).
-- **Input** — operator input + status.
+- **Input** — user input + status.
 
 Keys: type to talk · `Tab` cycles focus (input → left → right) · with a pane focused, `↑↓` /
 `PgUp PgDn` scroll and `G` jumps to latest · `Ctrl-C` quits.
@@ -107,7 +112,7 @@ npm start             # run in a real terminal (the TUI needs a TTY)
 /quit       power off
 ```
 
-Anything else is operator input fed to the machine on the terminal channel.
+Anything else is user input fed to the machine on the terminal channel.
 
 ## Things to try
 
@@ -125,9 +130,11 @@ Anything else is operator input fed to the machine on the terminal channel.
 |---|---|---|
 | `MODEL` | `claude-sonnet-4-6` | the processor (the LLM) |
 | `MAX_TOKENS` | `1024` | per-step output (context write) budget |
-| `MAX_BURST` | `16` | max main-frame steps without yielding to the operator (cost guard) |
+| `MAX_BURST` | `16` | max main-frame steps without yielding to the user (cost guard) |
 | `MAX_STEPS` | `12` | per-subroutine step budget (runaway guard) |
 | `MAX_DEPTH` | `5` | invoke recursion-depth guard |
+| `FOLD_BUDGET` | `6000` | ~tokens of C before its oldest part folds into the summary + an episode |
+| `FOLD_KEEP` | `8` | recent messages kept verbatim when folding |
 | `MEM_FILE` | `m.json` | durable disk image for M |
 
 ## Files

@@ -37,6 +37,12 @@ let globalStep = 0;
 let mainMsgs = 0;
 let mainTok = 0;
 
+// Continue episode numbering past any episodes already in M (so restarts don't overwrite).
+const lastEpisode = mem.keys().reduce((max, k) => {
+    const m = /^episode\/(\d+)$/.exec(k);
+    return m ? Math.max(max, parseInt(m[1], 10)) : max;
+}, 0);
+
 // Shared world: each step appends to the action stream; the live state box is refreshed in place.
 const world: World = {
     system: SYSTEM,
@@ -45,16 +51,19 @@ const world: World = {
     onStep: info => {
         store.trace(traceStep(info, ++globalStep));
         if (info.depth === 0) { mainMsgs = info.ctxMsgs; mainTok = info.ctxTok; }
-        store.state(stateLine(mem, mainMsgs, mainTok, globalStep));
+        store.state(stateLine(mem, mainMsgs, mainTok, config.foldBudget, globalStep));
     },
     onEvent: ev => store.chat(chatLine(ev)),
     maxSteps: config.maxSteps,
     maxDepth: config.maxDepth,
+    foldBudget: config.foldBudget,
+    foldKeepTail: config.foldKeepTail,
+    episodeN: lastEpisode,
 };
 
 const main = new Frame(world, 0, 'main'); // frame 0 — the resident agent
 
-// Operator input: a /command (to the harness) or plain input (to the shared terminal — the single
+// User input: a /command (to the harness) or plain input (to the shared terminal — the single
 // input path). Plain input is echoed to the conversation pane.
 store.onSubmit(raw => {
     const t = raw.trim();
@@ -63,7 +72,7 @@ store.onSubmit(raw => {
     if (t === '/mem' || t === '/m') return store.trace(memDump(mem));
     if (t === '/wipe') { mem.clear(); return store.trace('\n\x1b[90mdurable memory M wiped\x1b[0m'); }
     if (t.startsWith('/c')) return store.trace(ctxDump(main, parseInt(t.slice(2).trim(), 10) || 6));
-    store.chat(chatLine({ kind: 'operator', text: raw }));
+    store.chat(chatLine({ kind: 'user', text: raw }));
     term.push(raw);
 });
 
@@ -72,7 +81,7 @@ const ink = render(createElement(App, { store }));
 ink.waitUntilExit().then(() => { leaveAlt(); process.exit(0); });
 
 store.chat(`\x1b[90magent-kernel booted · ${mem.size} durable cell(s) · type below · /mem /c /wipe /quit\x1b[0m`);
-store.state(stateLine(mem, 0, 0, 0));
+store.state(stateLine(mem, 0, 0, config.foldBudget, 0));
 main.powerOn();
 
 (async () => {

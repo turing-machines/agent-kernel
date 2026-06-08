@@ -1,5 +1,5 @@
 // Bridge between the (UI-agnostic) machine logic and the Ink React app. The loop/world push
-// pre-formatted ANSI lines here; the React app subscribes and re-reads. Operator input flows
+// pre-formatted ANSI lines here; the React app subscribes and re-reads. User input flows
 // back via submit(). No blessed/Ink types leak into the logic.
 export class UiStore {
     readonly model: string;

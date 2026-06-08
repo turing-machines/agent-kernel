@@ -19,7 +19,7 @@ const fmtTok = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(
 export function chatLine(ev: ChatEvent): string {
     const pad = '  '.repeat('depth' in ev ? ev.depth : 0);
     switch (ev.kind) {
-        case 'operator':
+        case 'user':
             return `\n${b('cyan-fg', 'you ▸')} ${ev.text}`;
         case 'say':
             return ev.depth === 0
@@ -76,6 +76,7 @@ export function traceStep(info: StepInfo, globalN: number): string {
 
     const lines: string[] = [];
     lines.push(`\n${bar}${b('blue-fg', `▸ ${globalN}`)}  ${frameTag}  ${yk}  ${meta}`);
+    if (info.fold) lines.push(`${bar}  ${s('magenta-fg', '↯ fold')} ${dim(`${info.fold.msgs} msgs → ${info.fold.key}`)}`);
     if (info.monologue) lines.push(`${bar}${dim('  “' + preview(info.monologue, 58) + '”')}`);
     if (info.operations.length) {
         const ret = new Map(info.results.map(r => [r.toolUseId, r.content]));
@@ -88,12 +89,17 @@ export function traceStep(info: StepInfo, globalN: number): string {
 
 // ---- right pane (bottom): live state — updated in place, not appended ----------------------
 
-export function stateLine(mem: Memory, mainMsgs: number, mainTok: number, step: number): string {
+export function stateLine(mem: Memory, mainMsgs: number, mainTok: number, foldBudget: number, step: number): string {
     const keys = mem.keys();
     const keyStr = keys.length ? keys.map(k => s('yellow-fg', k)).join(dim('  ')) : dim('(empty)');
+    // current input tokens / fold budget — colour warms as it nears the fold, so you see it coming
+    const pct = foldBudget > 0 ? mainTok / foldBudget : 0;
+    const tokColor = pct >= 0.85 ? 'magenta-fg' : pct >= 0.6 ? 'yellow-fg' : 'green-fg';
+    const tok = `${s(tokColor, fmtTok(mainTok))}${dim('/' + fmtTok(foldBudget) + ' tok')}`;
+    const foldHint = pct >= 0.85 ? `  ${s('magenta-fg', '↯ fold soon')}` : '';
     return [
         ` ${b('yellow-fg', `M·${keys.length}`)}  ${keyStr}`,
-        ` ${b('cyan-fg', 'C·main')} ${mainMsgs} msgs ${dim('~' + fmtTok(mainTok))}    ${dim('│')}    ${b('blue-fg', 'steps')} ${step}`,
+        ` ${b('cyan-fg', 'C·main')} ${mainMsgs} msgs · ${tok}${foldHint}    ${dim('│')}    ${b('blue-fg', 'steps')} ${step}`,
     ].join('\n');
 }
 

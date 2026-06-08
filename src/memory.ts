@@ -77,7 +77,7 @@ export class Memory {
         return this.cells.size;
     }
 
-    // operator console power: wipe the durable disk (no operation can delete)
+    // user console power: wipe the durable disk (no operation can delete)
     clear() {
         this.cells.clear();
         this.save();

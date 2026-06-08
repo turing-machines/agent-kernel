@@ -11,13 +11,13 @@ export type OpResult = {
     content: string;
 };
 
-// How the step ended, relative to the operator.
+// How the step ended, relative to the user.
 export type YieldKind = 'wait' | 'endturn' | 'none';
 
 // A conversation/agent event for the left (chat) pane — emitted by frames as they act and
 // invoke. The machine logic stays UI-agnostic; the TUI renders these.
 export type ChatEvent =
-    | { kind: 'operator'; text: string }
+    | { kind: 'user'; text: string }
     | { kind: 'say'; text: string; depth: number; frame: string }
     | { kind: 'invoke'; name: string; args: string; depth: number }
     | { kind: 'return'; name: string; value: string; depth: number };
@@ -35,4 +35,5 @@ export type StepInfo = {
     yieldKind: YieldKind;
     ctxMsgs: number; // this frame's C length
     ctxTok: number; // this frame's C estimated tokens
+    fold?: { key: string; msgs: number }; // set on the step where old context was folded out
 };

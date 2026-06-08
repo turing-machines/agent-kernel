@@ -28,7 +28,7 @@ export const TOOLS: Anthropic.Tool[] = [
     },
     {
         name: 'search',
-        description: 'SEARCH memory M: find data or routines relevant to a query. Your durable memory is large and is NOT shown to you wholesale (only its size) — so search it when a task might be served by something you remember (a fact about the operator, a routine to invoke). Returns matching keys with a short preview. Then recall or invoke the ones you want by name.',
+        description: 'SEARCH memory M: find data or routines relevant to a query. Your durable memory is large and is NOT shown to you wholesale (only its size) — so search it when a task might be served by something you remember (a fact about the user, a routine to invoke). Returns matching keys with a short preview. Then recall or invoke the ones you want by name.',
         input_schema: {
             type: 'object',
             properties: { query: { type: 'string', description: 'what to look for (words, a topic, a capability)' } },
@@ -55,7 +55,7 @@ export const TOOLS: Anthropic.Tool[] = [
     },
     {
         name: 'act',
-        description: 'ACT (C->E): act on the environment — write text to a channel. Use channel "terminal" to speak to the operator.',
+        description: 'ACT (C->E): act on the environment — write text to a channel. Use channel "terminal" to speak to the user.',
         input_schema: {
             type: 'object',
             properties: {
@@ -67,12 +67,12 @@ export const TOOLS: Anthropic.Tool[] = [
     },
     {
         name: 'wait',
-        description: 'WAIT: halt until the operator provides input. Does not return it — read what they typed with perceive("terminal").',
+        description: 'WAIT: halt until the user provides input. Does not return it — read what they typed with perceive("terminal").',
         input_schema: { type: 'object', properties: {}, required: [] },
     },
     {
         name: 'invoke',
-        description: 'INVOKE (call): run a routine stored in memory M as a subroutine in its own fresh working memory. The subroutine shares M and the ports, does its work, and returns a value back to you. Use this to call routines you (or the operator) have remembered. Routines may invoke other routines.',
+        description: 'INVOKE (call): run a routine stored in memory M as a subroutine in its own fresh working memory. The subroutine shares M and the ports, does its work, and returns a value back to you. Use this to call routines you (or the user) have remembered. Routines may invoke other routines.',
         input_schema: {
             type: 'object',
             properties: {

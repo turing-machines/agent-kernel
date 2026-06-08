@@ -3,6 +3,7 @@ import { llm } from './llm.js';
 import { Memory } from './memory.js';
 import { Terminal } from './terminal.js';
 import { runCode, isCode, codeBody } from './exec.js';
+import { flattenContext, FOLD_SYSTEM } from './fold.js';
 import type { Operation, OpResult, StepInfo, YieldKind, ChatEvent } from './types.js';
 
 // Shared environment for all frames: the resident system text, the shared durable memory M,
@@ -15,14 +16,19 @@ export type World = {
     onEvent: (ev: ChatEvent) => void; // left pane: conversation / agent activity
     maxSteps: number; // per-frame step budget (subroutine runaway guard)
     maxDepth: number; // invoke recursion guard
+    foldBudget: number; // ~tokens of C before older context is folded out
+    foldKeepTail: number; // recent messages kept verbatim on fold
+    episodeN: number; // running counter for episode/* keys (mutable, shared)
 };
 
-// A Frame is one running context. Frame 0 is the resident main agent (operator-driven);
+// A Frame is one running context. Frame 0 is the resident main agent (user-driven);
 // invoke() pushes a child frame seeded with a routine from M, runs it to return(), and the
 // returned value lands in the parent's context. Frames SHARE M and the terminal; each gets a
 // FRESH C (working memory). The JS call stack mirrors the frame stack.
 export class Frame {
     C: Anthropic.MessageParam[] = []; // this frame's own working memory (fresh per call)
+    private summary = ''; // running gist of context folded out of C (the consolidation tier)
+    private lastInput = 0; // real input tokens of the last LLM call (from usage) — the fold trigger
     private done = false;
     private returnValue = '';
     private stepInFrame = 0;
@@ -33,7 +39,7 @@ export class Frame {
     powerOn() {
         this.C.push({
             role: 'user',
-            content: '[POWER ON] Terminal connected. Operator present. You are the processor — run.',
+            content: '[POWER ON] Terminal connected. User present. You are the processor — run.',
         });
     }
 
@@ -63,6 +69,11 @@ export class Frame {
         this.stepInFrame++;
         const t0 = Date.now();
 
+        // Paging: when C grows past the budget, fold its oldest part into the running summary and
+        // archive the detail as an episode in M. Automatic (the agent doesn't manage it) — like an
+        // OS paging memory. Keeps C small and coherent on long sessions without losing anything.
+        const fold = await this.maybeFold();
+
         // Selective projection: the frame shows only the SIZE of M, never its keys — the directory
         // is queried with search(), not held resident. This scales to any library size (O(1) here),
         // keeps the context clean, and makes invoking a routine deliberate (search → find → invoke)
@@ -71,13 +82,17 @@ export class Frame {
             ? `${this.world.mem.size} entries (data and routines) — not shown here; use search("...") to find relevant ones, then recall/invoke by name`
             : 'empty';
         const pending = this.world.term.hasInput() ? 'YES — read it with perceive("terminal")' : 'none';
+        const sessionSoFar = this.summary
+            ? `\nSESSION SO FAR (older context was folded out; full detail is in M under episode/*):\n${this.summary}\n`
+            : '';
         const system =
-            `${this.world.system}\n\n` +
+            `${this.world.system}\n${sessionSoFar}\n` +
             `DURABLE MEMORY M: ${memHint}\n` +
             `TERMINAL pending input: ${pending}`;
 
         const resp = await llm(this.C, system); // SEE
         const llmMs = Date.now() - t0;
+        this.lastInput = resp.usage.input; // exact Claude token count of (system + C) for this call
 
         // PARSE
         const monologue = resp.content
@@ -118,10 +133,45 @@ export class Frame {
             ms: llmMs,
             yieldKind,
             ctxMsgs: this.C.length,
-            ctxTok: Math.round(JSON.stringify(this.C).length / 4),
+            ctxTok: resp.usage.input, // real input tokens (system + C), not a chars/4 guess
+            fold: fold ?? undefined,
         };
         this.world.onStep(info);
         return info;
+    }
+
+    // Fold the oldest part of C into the running summary + an episode in M, when C is over budget.
+    // Returns what was folded (for the trace), or null. One LLM call per fold; cheap and rare.
+    private async maybeFold(): Promise<{ key: string; msgs: number } | null> {
+        // Trigger on the REAL input-token count of the previous step (from usage), not a guess.
+        // 0 on the first step (no call yet) → never folds prematurely.
+        if (this.lastInput < this.world.foldBudget) return null;
+        const keep = this.world.foldKeepTail;
+        if (this.C.length <= keep + 1) return null;
+
+        const head = this.C.slice(0, this.C.length - keep);
+        const tail = this.C.slice(this.C.length - keep);
+        const headText = flattenContext(head);
+        const key = `episode/${++this.world.episodeN}`;
+        this.world.mem.set(key, headText); // demote detail C → M (durable, searchable archive)
+
+        try {
+            const prompt =
+                (this.summary ? `Current summary:\n${this.summary}\n\n` : '') +
+                `New context to fold in (full detail archived in M as "${key}"):\n${headText}\n\n` +
+                `Produce the updated running summary.`;
+            const resp = await llm([{ role: 'user', content: prompt }], FOLD_SYSTEM);
+            this.summary = resp.content
+                .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+                .map(b => b.text)
+                .join('\n')
+                .trim();
+            this.C = tail;
+            return { key, msgs: head.length };
+        } catch {
+            // fold failed — leave C intact this step (it'll retry next step); episode is still archived
+            return null;
+        }
     }
 
     private async exec(op: Operation): Promise<OpResult> {
@@ -145,7 +195,7 @@ export class Frame {
                 return ok('OK');
             case 'perceive': {
                 const drained = this.world.term.drain();
-                return ok(drained ? `OPERATOR:\n${drained}` : '(no input)');
+                return ok(drained ? `USER:\n${drained}` : '(no input)');
             }
             case 'wait':
                 await this.world.term.waitForInput();
