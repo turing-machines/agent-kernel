@@ -3,6 +3,7 @@
     "version": "0.1.0",
     "private": true,
     "description": "A 10-primitive kernel for agents you build from within — processor is a language model",
+    "license": "MIT",
     "type": "module",
     "scripts": {
         "start": "NODE_NO_WARNINGS=1 tsx src/index.ts"
